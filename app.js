@@ -1,1 +1,0 @@
-// see https://github.com/cookpete/git-checkout-interactive/blob/master/index.js
