@@ -1,6 +1,6 @@
 {
-  "name": "quickswitch",
-  "version": "1.0.0",
+  "name": "qs",
+  "version": "1.0.1",
   "main": "app.js",
   "author": "Benjamin Sidi <benjisidi@protonmail.com>",
   "license": "MIT",
@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/app.js"
   },
+  "bin": "dist/app.js",
   "dependencies": {
     "@types/uniq": "^0.0.29",
     "chalk": "4",

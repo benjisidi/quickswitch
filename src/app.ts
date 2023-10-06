@@ -1,4 +1,4 @@
-#!/usr/bin/env -S npx ts-node
+#!/usr/bin/env node
 // see https://github.com/cookpete/git-checkout-interactive/blob/master/index.js
 
 import { search } from "fast-fuzzy";
@@ -105,7 +105,7 @@ const selectSearchedBranch = async (branches: Branch[]): Promise<Branch> => {
     return Promise.resolve(
       search(
         input,
-        choices.map((x) => x.value)
+        choices.map((x) => displayBranch(x.value))
       )
     );
   };
@@ -118,7 +118,7 @@ const selectSearchedBranch = async (branches: Branch[]): Promise<Branch> => {
         message: "Select a branch",
         choices: branches.map((branch) => ({
           title: displayBranch(branch),
-          value: branch.name,
+          value: branch,
         })),
         suggest: filterBranches,
       },
@@ -132,6 +132,12 @@ const selectSearchedBranch = async (branches: Branch[]): Promise<Branch> => {
 };
 
 const main = async () => {
+  try {
+    await execPromise("git rev-parse --is-inside-work-tree");
+  } catch (_) {
+    console.log("Not a git repository");
+    process.exit(1);
+  }
   program.parse();
   const opts = program.opts();
   const rawBranches = await execPromise(
