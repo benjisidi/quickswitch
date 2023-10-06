@@ -37,13 +37,44 @@ type Branch = {
   author: string;
 };
 
-const displayBranch = (branch: Branch) => {
-  return `${chalk.yellow(branch.name)}\t${chalk.green(
-    branch.lastCommit
-  )}\t${chalk.blue(truncate(branch.message))}\t${chalk.magenta(branch.author)}`;
+const displayBranch = (branch: Branch, longestName: number) => {
+  const maxChars = process.stdout.columns || 80;
+  let availableChars = maxChars - longestName - 13 - 15 - 15 - 9 - 7;
+  let nameLength = longestName;
+  let showAuthor = true;
+  // First, try hiding the author
+  if (availableChars <= 3) {
+    showAuthor = false;
+    availableChars += 15;
+  }
+  // Then, truncate the branch name too
+  if (availableChars <= 3) {
+    nameLength = longestName - (3 - availableChars);
+    availableChars += longestName - nameLength;
+  }
+  let message = [];
+  // Commit name
+  message.push(
+    chalk.yellow(truncate(branch.name, nameLength).padEnd(nameLength, " "))
+  );
+  // Last commit timestamp
+  message.push(chalk.green(branch.lastCommit.padEnd(13, " ")));
+  // Message
+  message.push(
+    chalk.blue(
+      truncate(branch.message, availableChars).padEnd(availableChars, " ")
+    )
+  );
+  if (showAuthor) {
+    message.push(chalk.magenta(truncate(branch.author, 15)));
+  }
+  return message.join(" | ");
 };
 
-const selectRecentBranch = async (branches: Branch[]): Promise<Branch> => {
+const selectRecentBranch = async (
+  branches: Branch[],
+  longestName: number
+): Promise<Branch> => {
   const rawRecentCheckouts = await execPromise(
     'git log -g --grep-reflog "checkout:" --format="%gs" --max-count=50'
   );
@@ -78,7 +109,7 @@ const selectRecentBranch = async (branches: Branch[]): Promise<Branch> => {
     }
     console.log(
       `[${i.toString()}] `.padStart(5, " ") +
-        displayBranch(branchLookup[branchName])
+        displayBranch(branchLookup[branchName], longestName)
     );
   }
   const target = await prompts(
@@ -97,7 +128,10 @@ const selectRecentBranch = async (branches: Branch[]): Promise<Branch> => {
   return branchLookup[recentCheckouts[target.selection]];
 };
 
-const selectSearchedBranch = async (branches: Branch[]): Promise<Branch> => {
+const selectSearchedBranch = async (
+  branches: Branch[],
+  longestName: number
+): Promise<Branch> => {
   const filterBranches = (input: string, choices: prompts.Choice[]) => {
     if (!input) {
       return Promise.resolve(choices);
@@ -105,7 +139,7 @@ const selectSearchedBranch = async (branches: Branch[]): Promise<Branch> => {
     return Promise.resolve(
       search(
         input,
-        choices.map((x) => displayBranch(x.value))
+        choices.map((x) => displayBranch(x.value, longestName))
       )
     );
   };
@@ -117,7 +151,7 @@ const selectSearchedBranch = async (branches: Branch[]): Promise<Branch> => {
         name: "selection",
         message: "Select a branch",
         choices: branches.map((branch) => ({
-          title: displayBranch(branch),
+          title: displayBranch(branch, longestName),
           value: branch,
         })),
         suggest: filterBranches,
@@ -159,11 +193,18 @@ const main = async () => {
       };
     });
 
+  const longestName = branches.reduce((acc, cur) => {
+    if (cur.name.length > acc) {
+      return cur.name.length;
+    }
+    return acc;
+  }, 0);
+  console.log(longestName);
   let target: Branch;
   if (opts.recent) {
-    target = await selectRecentBranch(branches);
+    target = await selectRecentBranch(branches, longestName);
   } else {
-    target = await selectSearchedBranch(branches);
+    target = await selectSearchedBranch(branches, longestName);
   }
 
   await execPromise(`git checkout ${target.name.trim()}`);
