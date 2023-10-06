@@ -6,7 +6,8 @@
   "license": "MIT",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/app.js"
+    "start": "node dist/app.js",
+    "refresh": "npm uninstall -g qs && yarn build && npm install -g ."
   },
   "bin": "dist/app.js",
   "dependencies": {
