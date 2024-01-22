@@ -40,6 +40,7 @@ type Branch = {
 const displayBranch = (branch: Branch, longestName: number) => {
   const maxChars = process.stdout.columns || 80;
   let availableChars = maxChars - longestName - 13 - 15 - 15 - 9 - 7;
+  let messageLength = 15;
   let nameLength = longestName;
   let showAuthor = true;
   // First, try hiding the author
@@ -137,10 +138,12 @@ const selectSearchedBranch = async (
       return Promise.resolve(choices);
     }
     return Promise.resolve(
-      search(
-        input,
-        choices.map((x) => displayBranch(x.value, longestName))
-      )
+      search(input, choices, { keySelector: (x) => x.value.name }).map((x) => {
+        return {
+          title: displayBranch(x.value, longestName),
+          value: x,
+        };
+      })
     );
   };
 
@@ -162,6 +165,10 @@ const selectSearchedBranch = async (
     }
   );
 
+  // prompts does some dome shit where its return structure is different depending if you searched or not
+  if (target.selection.value) {
+    return target.selection.value;
+  }
   return target.selection;
 };
 
@@ -199,7 +206,7 @@ const main = async () => {
     }
     return acc;
   }, 0);
-  console.log(longestName);
+
   let target: Branch;
   if (opts.recent) {
     target = await selectRecentBranch(branches, longestName);
