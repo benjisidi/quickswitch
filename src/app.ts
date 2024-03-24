@@ -7,7 +7,7 @@ import util from "util";
 import { exec } from "child_process";
 import chalk from "chalk";
 import { program } from "commander";
-program.option("--recent");
+// program.option("--recent");
 
 const execPromise = util.promisify(exec);
 
@@ -72,67 +72,74 @@ const displayBranch = (branch: Branch, longestName: number) => {
   return message.join(" | ");
 };
 
-const selectRecentBranch = async (
-  branches: Branch[],
-  longestName: number
-): Promise<Branch> => {
-  const rawRecentCheckouts = await execPromise(
-    'git log -g --grep-reflog "checkout:" --format="%gs" --max-count=50'
-  );
-  let recentCheckouts = rawRecentCheckouts.stdout
-    ?.split("\n")
-    .filter((x) => !!x)
-    .map((x) => x.slice(22).split(" to ")[1]);
-  recentCheckouts = uniq(recentCheckouts);
-  const branchLookup = branches.reduce(
-    (acc: { [name: string]: Branch }, cur) => {
-      acc[cur.name] = cur;
-      return acc;
-    },
-    {}
-  );
-  for (let i = 0; i < recentCheckouts.length; i++) {
-    const branchName = recentCheckouts[i];
-    if (!branchLookup[branchName]) {
-      // We must have just a commit hash here, let's go get the deets
-      const rawCommitDetails = (
-        await execPromise(`git show ${branchName} --format="%H|%ar|%s|%an"`)
-      ).stdout
-        .split("\n")
-        .filter((x) => !!x)[0]
-        .split("|");
-      branchLookup[branchName] = {
-        name: rawCommitDetails[0],
-        lastCommit: rawCommitDetails[1],
-        message: rawCommitDetails[2],
-        author: rawCommitDetails[3],
-      };
-    }
-    console.log(
-      `[${i.toString()}] `.padStart(5, " ") +
-        displayBranch(branchLookup[branchName], longestName)
-    );
-  }
-  const target = await prompts(
-    [
-      {
-        type: "number",
-        name: "selection",
-        message: "Select a branch",
-        validate: (value) => value >= 0 && value < recentCheckouts.length,
-      },
-    ],
-    {
-      onCancel: () => process.exit(0),
-    }
-  );
-  return branchLookup[recentCheckouts[target.selection]];
+// This isn't a nice enough experience to include - it technically works, but the printing
+// is slow and it's not significantly more useful than the search
+// const selectRecentBranch = async (
+//   branches: Branch[],
+//   longestName: number
+// ): Promise<Branch> => {
+//   const rawRecentCheckouts = await execPromise(
+//     'git log -g --grep-reflog "checkout:" --format="%gs" --max-count=50'
+//   );
+//   let recentCheckouts = rawRecentCheckouts.stdout
+//     ?.split("\n")
+//     .filter((x) => !!x)
+//     .map((x) => x.slice(22).split(" to ")[1]);
+//   recentCheckouts = uniq(recentCheckouts);
+//   const branchLookup = branches.reduce(
+//     (acc: { [name: string]: Branch }, cur) => {
+//       acc[cur.name] = cur;
+//       return acc;
+//     },
+//     {}
+//   );
+//   for (let i = 0; i < recentCheckouts.length; i++) {
+//     const branchName = recentCheckouts[i];
+//     if (!branchLookup[branchName]) {
+//       // We must have just a commit hash here, let's go get the deets
+//       const rawCommitDetails = (
+//         await execPromise(`git show ${branchName} --format="%H|%ar|%s|%an"`)
+//       ).stdout
+//         .split("\n")
+//         .filter((x) => !!x)[0]
+//         .split("|");
+//       branchLookup[branchName] = {
+//         name: rawCommitDetails[0],
+//         lastCommit: rawCommitDetails[1],
+//         message: rawCommitDetails[2],
+//         author: rawCommitDetails[3],
+//       };
+//     }
+//     console.log(
+//       `[${i.toString()}] `.padStart(5, " ") +
+//         displayBranch(branchLookup[branchName], longestName)
+//     );
+//   }
+//   const target = await prompts(
+//     [
+//       {
+//         type: "number",
+//         name: "selection",
+//         message: "Select a branch",
+//         validate: (value) => value >= 0 && value < recentCheckouts.length,
+//       },
+//     ],
+//     {
+//       onCancel: () => process.exit(0),
+//     }
+//   );
+//   return branchLookup[recentCheckouts[target.selection]];
+// };
+
+type BranchSelection = {
+  branch: Branch;
+  cancelled: boolean;
 };
 
 const selectSearchedBranch = async (
   branches: Branch[],
   longestName: number
-): Promise<Branch> => {
+): Promise<BranchSelection> => {
   const filterBranches = (input: string, choices: prompts.Choice[]) => {
     if (!input) {
       return Promise.resolve(choices);
@@ -147,12 +154,22 @@ const selectSearchedBranch = async (
     );
   };
 
+  let cancelled = false;
+
   const target = await prompts(
     [
       {
         type: "autocomplete",
         name: "selection",
         message: "Select a branch",
+        onState: (state) => {
+          if (state.aborted) {
+            cancelled = true;
+          }
+          if (state.exited) {
+            cancelled = true;
+          }
+        },
         choices: branches.map((branch) => ({
           title: displayBranch(branch, longestName),
           value: branch,
@@ -161,15 +178,30 @@ const selectSearchedBranch = async (
       },
     ],
     {
-      onCancel: () => process.exit(0),
+      onCancel: () => {
+        cancelled = true;
+      },
     }
   );
 
+  if (cancelled) {
+    return {
+      branch: {
+        name: "",
+        lastCommit: "",
+        message: "",
+        author: "",
+      },
+      cancelled,
+    };
+  }
+
   // prompts does some dome shit where its return structure is different depending if you searched or not
   if (target.selection.value) {
-    return target.selection.value;
+    return { branch: target.selection.value, cancelled: false };
   }
-  return target.selection;
+
+  return { branch: target.selection, cancelled: false };
 };
 
 const main = async () => {
@@ -180,7 +212,7 @@ const main = async () => {
     process.exit(1);
   }
   program.parse();
-  const opts = program.opts();
+  // const opts = program.opts();
   const rawBranches = await execPromise(
     "git for-each-ref --sort=-committerdate refs/heads --format='%(refname:short)|%(HEAD)%(refname:short)|%(committerdate:relative)|%(subject)|%(authorname)' --color=always"
   );
@@ -208,11 +240,21 @@ const main = async () => {
   }, 0);
 
   let target: Branch;
-  if (opts.recent) {
-    target = await selectRecentBranch(branches, longestName);
-  } else {
-    target = await selectSearchedBranch(branches, longestName);
+  // if (opts.recent) {
+  //   target = await selectRecentBranch(branches, longestName);
+  // } else {
+  process.on("SIGWINCH", () => {
+    console.log("resized");
+  });
+  const { branch, cancelled } = await selectSearchedBranch(
+    branches,
+    longestName
+  );
+  if (cancelled) {
+    return;
   }
+  target = branch;
+  // }
 
   await execPromise(`git checkout ${target.name.trim()}`);
 };
